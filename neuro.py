@@ -117,9 +117,9 @@ class Neuro:
     # и я покажу как сделать классификатор дерево или нет 
     # в домашних условиях своими руками
 
-    def tont(self, img: Img) -> bool: # Tree Or Not Tree
+    def tont(self, img: Img): # Tree Or Not Tree
         image = self.preprocess(img).unsqueeze(0)
-        text = self.tokenizer(["a photo of a tree", "a photo of not a tree"])
+        text = self.tokenizer(prms.TOKENS)
 
         with torch.no_grad():
             image_features = self.clip.encode_image(image)
@@ -130,11 +130,12 @@ class Neuro:
 
             similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
 
-            labels = [1, 0]
-            prediction = 1
-            for label, score in zip(labels, similarity[0].tolist()):
+            prediction = prms.LABELS[similarity[0].argmax().item()]
+            # for label, score in zip(prms.LABELS, similarity[0].tolist()):
                 # print(f"{label}: {score:.4f}")
-                # print("Prediction:", labels[similarity[0].argmax().item()])
-                prediction *= labels[similarity[0].argmax().item()]
+                # print("Prediction:", prms.LABELS[similarity[0].argmax().item()])
+                # prediction *= prms.LABELS[similarity[0].argmax().item()]
+            # print("Prediction:", prediction)
 
+        # return prediction
         return prediction

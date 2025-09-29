@@ -62,3 +62,20 @@ CONTOURS_THICKNESS = 15
 
 # SERVER
 TUTORIAL_DIR = "./tutorial"
+
+# CLIP
+TOKENS = [
+    "a photo of a tree", # дерево
+    "a photo of a tree trunk", # ствол
+    "a photo of branch", # ветка
+    "a photo of stump", # пень
+    "a photo of not a tree" # ваще не дерево
+    ]
+
+LABELS = [
+    4, # "tree", 
+    3, # "tree tunk", 
+    2, # "branch", 
+    1, # "stump", 
+    0, # "nothing",
+    ]
