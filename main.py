@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -15,19 +16,28 @@ LOG.info("МОДУЛЬ NEURO ЗАПУЩЕН")
 
 
 @app.post("/analyze", response_model=OutputData)
-async def analyze_trees(data: InputData):
+# async def analyze_trees(data: InputData):
+async def analyze_trees():
     # ОБРАЩЕНИЕ К YOLO и LLM
     trees: list[TreeInfo] = []
 
-    img = from_base64(data.img_base64)
-    img_user, img_ollama = neuro.depth_marked(img)
+    # img = from_base64(data.img_base64)
+    img = "image.png"
+    img_user, img_ollama = neuro.depth_marked(Image.open(img))
     LOG.info("МАРКИРОВКА ЗАВЕРШЕНА УСПЕШНО")
 
-    json_description = [] # neuro.ollama_json(to_base64(img_ollama))
-    LOG.info("ОПИСАНИЕ ПОЛУЧЕНО УСПЕШНО")
-    if json_description:
-        for tree in json_description:
-            trees.append(TreeInfo(**tree)) # type: ignore
+    if not neuro.tont(img_user):
+        raise HTTPException(
+            status_code=500,
+            detail="Its_Not_Tree error"
+        )
+    else: print("derevo")
+
+    # json_description = [] # neuro.ollama_json(to_base64(img_ollama))
+    # LOG.info("ОПИСАНИЕ ПОЛУЧЕНО УСПЕШНО")
+    # if json_description:
+    #     for tree in json_description:
+    #         trees.append(TreeInfo(**tree)) # type: ignore
     return OutputData(img_marked_base64=to_base64(img_user), trees=trees)
 
     raise HTTPException(
@@ -44,3 +54,6 @@ def get_tutorial_image(step: int):
         raise HTTPException(status_code=404, detail="Image not found")
 
     return FileResponse(file_path, media_type="image/png")
+
+if __name__ == "__main__":
+    asyncio.run(analyze_trees())
