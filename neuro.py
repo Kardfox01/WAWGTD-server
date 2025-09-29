@@ -10,6 +10,9 @@ from ollama import chat, ChatResponse
 import torch
 import prms
 
+# ура ура, новый импорт
+import open_clip
+
 
 Img = Image.Image
 
@@ -30,6 +33,7 @@ class Neuro:
         # self.LOG.info("ЗАГРУЗКА МОДЕЛИ YOLO...")
         # self.yolo_model = YOLO(prms.YOLO_WEIGHTS_PATH)
         # self.LOG.info("МОДЕЛЬ YOLO ЗАГРУЖЕНА УСПЕШНО")
+        
         self.LOG.info("ЗАГРУЗКА DPT...")
         self.midas = torch.hub.load("intel-isl/MiDaS", "DPT_Hybrid")  # можно заменить на "DPT_Large" или "DPT_Hybrid"
         self.midas.eval()
@@ -37,12 +41,21 @@ class Neuro:
         self.midas.to(self.device)
         self.transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
         self.LOG.info("DPT ЗАГРУЖЕНА")
-        self.LOG.info("ИНИЦИАЛИЗАЦИЯ МОДЕЛИ OLLAMA...")
-        chat(model=prms.OLLAMA_MODEL, messages=[{
-            "role": "user",
-            "content": ""
-        }])
-        self.LOG.info("МОДЕЛЬ OLLAMA ИНИЦИАЛИЗИРОВАНА УСПЕШНО")
+        
+        # self.LOG.info("ИНИЦИАЛИЗАЦИЯ МОДЕЛИ OLLAMA...")
+        # chat(model=prms.OLLAMA_MODEL, messages=[{
+        #     "role": "user",
+        #     "content": ""
+        # }])
+        # self.LOG.info("МОДЕЛЬ OLLAMA ИНИЦИАЛИЗИРОВАНА УСПЕШНО")
+
+        self.LOG.info("ИНИЦИАЛИЗАЦИЯ МОДЕЛИ CLIP")
+        self.clip, self._, self.preprocess = open_clip.create_model_and_transforms(
+            "ViT-B-32", pretrained="laion2b_s34b_b79k"
+            )
+        self.tokenizer = open_clip.get_tokenizer("ViT-B-32")
+        self.LOG.info("МОДЕЛЬ CLIP ИНИЦИАЛИЗИРОВАНА УСПЕШНО")
+
 
     def depth_marked(self, pil_img: Img) -> tuple[Img, Img]:
         transform = self.transforms.dpt_transform
@@ -97,3 +110,31 @@ class Neuro:
             return json.loads(response.message.content.replace("```json", "").replace("```", ""))
 
         return None
+
+
+    # тут начинается часть лучшего программиста нашей группы
+    # восходящей звезды, а точнее супер-звезды
+    # и я покажу как сделать классификатор дерево или нет 
+    # в домашних условиях своими руками
+
+    def tont(self, img: Img) -> bool: # Tree Or Not Tree
+        image = self.preprocess(img).unsqueeze(0)
+        text = self.tokenizer(["a photo of a tree", "a photo of not a tree"])
+
+        with torch.no_grad():
+            image_features = self.clip.encode_image(image)
+            text_features = self.clip.encode_text(text)
+
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+
+            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+
+            labels = [1, 0]
+            prediction = 1
+            for label, score in zip(labels, similarity[0].tolist()):
+                # print(f"{label}: {score:.4f}")
+                # print("Prediction:", labels[similarity[0].argmax().item()])
+                prediction *= labels[similarity[0].argmax().item()]
+
+        return prediction
