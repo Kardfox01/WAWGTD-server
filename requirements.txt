@@ -1,0 +1,9 @@
+fastapi[standard]
+pydantic
+pillow
+numpy
+ollama
+torch
+open-clip-torch
+timm
+opencv-python
