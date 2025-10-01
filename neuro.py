@@ -71,10 +71,8 @@ class Neuro:
         transform = self.transforms.dpt_transform
         img = np.array(pil_img)
         input_tensor = transform(img).to(self.device)
-
         with torch.no_grad():
             prediction = self.midas(input_tensor)
-
             # Интерполируем карту глубины к размеру изображения
             h, w = img.shape[:2]
             prediction = torch.nn.functional.interpolate(
@@ -84,33 +82,22 @@ class Neuro:
                 align_corners=False
             ).squeeze().cpu().numpy()
 
-        # Нормализация в 0–255
-        depth_norm = cv2.normalize(prediction, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        depth_min = prediction.min()
+        depth_max = prediction.max()
+        depth_vis = ((prediction - depth_min) / (depth_max - depth_min) * 255).astype(np.uint8)
 
-        # Сглаживание с сохранением границ
-        depth_smooth = cv2.bilateralFilter(depth_norm, d=9, sigmaColor=75, sigmaSpace=75)
-
-        # Otsu threshold вместо фиксированного
-        _, bright_mask = cv2.threshold(depth_smooth, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-        # Морфология для очистки и сглаживания границ
-        kernel = np.ones((5, 5), np.uint8)
-        bright_mask = cv2.morphologyEx(bright_mask, cv2.MORPH_CLOSE, kernel)
-        bright_mask = cv2.morphologyEx(bright_mask, cv2.MORPH_OPEN, kernel)
-
-        # Контуры
-        contours, _ = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        _, bright_mask = cv2.threshold(depth_vis, prms.THRESHOLD_VALUE, 255, cv2.THRESH_BINARY)
+        contours, hierarchy = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         img_with_contours = img.copy()
         cv2.drawContours(img_with_contours, contours, -1, (255, 0, 0), prms.CONTOURS_THICKNESS)
 
-        # Тёмный фон с подсветкой объектов
-        binary_mask = (bright_mask > 0).astype(np.uint8)
+        binary_mask = (depth_vis > prms.THRESHOLD_VALUE).astype(np.uint8)
         dark_image = (img * 0.2).astype(np.uint8)
-        binary_mask_3ch = cv2.merge([binary_mask] * 3)
+        binary_mask_3ch = cv2.merge([binary_mask]*3)
         image_dark_bg = np.where(binary_mask_3ch == 1, img, dark_image)
-        cv2.drawContours(image_dark_bg, contours, -1, prms.CONTOURS_COLOR, max(1, prms.CONTOURS_THICKNESS - 5))
+        cv2.drawContours(image_dark_bg, contours, -1, prms.CONTOURS_COLOR, prms.CONTOURS_THICKNESS - 5)
 
-        return Image.fromarray(depth_smooth), Image.fromarray(img_with_contours)
+        return Image.fromarray(depth_vis), Image.fromarray(img_with_contours)
 
     @LOG("ОПИСАНИЕ OLLAMA")
     def ollama_json(self, base64_code: str) -> Optional[dict[str, str]]:
