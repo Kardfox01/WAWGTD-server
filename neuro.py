@@ -1,17 +1,19 @@
 import base64
 import io
 import json
-from logging import Logger
+import os
+import time
 from typing import Optional
 from PIL import Image
 import cv2
 import numpy as np
 from ollama import chat, ChatResponse
+import requests
 import torch
-import prms
-
-# ура ура, новый импорт
 import open_clip
+
+import prms
+from logger import LOG
 
 
 Img = Image.Image
@@ -27,36 +29,44 @@ def to_base64(img: Img):
 
 
 class Neuro:
-    def __init__(self, LOG: Logger):
-        self.LOG = LOG
+    def __init__(self):
+        self.load_dpt()
+        # self.ollama_warmup()
+        self.load_clip()
 
-        # self.LOG.info("ЗАГРУЗКА МОДЕЛИ YOLO...")
-        # self.yolo_model = YOLO(prms.YOLO_WEIGHTS_PATH)
-        # self.LOG.info("МОДЕЛЬ YOLO ЗАГРУЖЕНА УСПЕШНО")
-        
-        self.LOG.info("ЗАГРУЗКА DPT...")
-        self.midas = torch.hub.load("intel-isl/MiDaS", "DPT_Hybrid")  # можно заменить на "DPT_Large" или "DPT_Hybrid"
+    @LOG("ПРОГРЕВ OLLAMA")
+    def ollama_warmup(self):
+        try:
+            response = requests.post(
+                prms.OLLAMA_API,
+                json={
+                    "model": prms.OLLAMA_MODEL,
+                    "prompt": "",
+                    "keep_alive": -1
+                },
+                timeout=10
+            )
+            if response.status_code != 200:
+                raise ConnectionError("ОШИБКА ПОДКЛЮЧЕНИЯ К OLLAMA")
+        except Exception as _:
+            raise ConnectionError("ОШИБКА ПОДКЛЮЧЕНИЯ К OLLAMA")
+
+    @LOG("ЗАГРУЗКА DPT")
+    def load_dpt(self):
+        self.midas = torch.hub.load("intel-isl/MiDaS", "DPT_Hybrid", verbose=False)
         self.midas.eval()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.midas.to(self.device)
-        self.transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
-        self.LOG.info("DPT ЗАГРУЖЕНА")
-        
-        # self.LOG.info("ИНИЦИАЛИЗАЦИЯ МОДЕЛИ OLLAMA...")
-        # chat(model=prms.OLLAMA_MODEL, messages=[{
-        #     "role": "user",
-        #     "content": ""
-        # }])
-        # self.LOG.info("МОДЕЛЬ OLLAMA ИНИЦИАЛИЗИРОВАНА УСПЕШНО")
+        self.transforms = torch.hub.load("intel-isl/MiDaS", "transforms", verbose=False)
 
-        self.LOG.info("ИНИЦИАЛИЗАЦИЯ МОДЕЛИ CLIP")
+    @LOG("ЗАГРУЗКА CLIP")
+    def load_clip(self):
         self.clip, self._, self.preprocess = open_clip.create_model_and_transforms(
             "ViT-B-32", pretrained="laion2b_s34b_b79k"
             )
         self.tokenizer = open_clip.get_tokenizer("ViT-B-32")
-        self.LOG.info("МОДЕЛЬ CLIP ИНИЦИАЛИЗИРОВАНА УСПЕШНО")
 
-
+    @LOG("МАРКИРОВКА ИЗОБРАЖЕНИЯ ПО ГЛУБИНЕ")
     def depth_marked(self, pil_img: Img) -> tuple[Img, Img]:
         transform = self.transforms.dpt_transform
         img = np.array(pil_img)
@@ -79,7 +89,7 @@ class Neuro:
         _, bright_mask = cv2.threshold(depth_vis, prms.THRESHOLD_VALUE, 255, cv2.THRESH_BINARY)
         contours, hierarchy = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         img_with_contours = img.copy()
-        cv2.drawContours(img_with_contours, contours, -1, prms.CONTOURS_COLOR, prms.CONTOURS_THICKNESS)
+        cv2.drawContours(img_with_contours, contours, -1, (255, 0, 0), prms.CONTOURS_THICKNESS)
 
         binary_mask = (depth_vis > prms.THRESHOLD_VALUE).astype(np.uint8)
         dark_image = (img * 0.2).astype(np.uint8)
@@ -87,36 +97,64 @@ class Neuro:
         image_dark_bg = np.where(binary_mask_3ch == 1, img, dark_image)
         cv2.drawContours(image_dark_bg, contours, -1, prms.CONTOURS_COLOR, prms.CONTOURS_THICKNESS - 5)
 
-        return Image.fromarray(image_dark_bg), Image.fromarray(img_with_contours)
+        return Image.fromarray(depth_vis), Image.fromarray(img_with_contours)
 
+    @LOG("ОПИСАНИЕ OLLAMA")
     def ollama_json(self, base64_code: str) -> Optional[dict[str, str]]:
-        self.LOG.info("ОЖИДАНИЕ ОПИСАНИЯ OLLAMA...")
-        response: ChatResponse = chat(model=prms.OLLAMA_MODEL, messages=[
+        # response: ChatResponse = chat(model=prms.OLLAMA_MODEL, messages=[
+        #     {
+        #         "role": "system",
+        #         "content": prms.OLLAMA_SYSTEM_PROMPT
+        #     },
+        #     {
+        #         "role": "user",
+        #         "content": prms.OLLAMA_USER_PROMPT,
+        #         "images": [base64_code]
+        #     }
+        # ])
+
+        # data = response.message.content
+
+        data = """
+        [
             {
-                "role": "system",
-                "content": prms.OLLAMA_SYSTEM_PROMPT
+                "species": "Хвойное",
+                "trunk_rot": false,
+                "hollows": false,
+                "cracks": false,
+                "trunk_damage": false,
+                "crown_damage": false,
+                "fruiting_bodies": false,
+                "diseases": [],
+                "dry_branches_percent": 5.0,
+                "other": null,
+                "description": "Здоровое хвойное дерево.",
+                "tree_bounding_boxes": [[40, 100, 200, 600]]
             },
             {
-                "role": "user",
-                "content": prms.OLLAMA_USER_PROMPT,
-                "images": [base64_code]
+                "species": "Лиственное",
+                "trunk_rot": true,
+                "hollows": false,
+                "cracks": true,
+                "trunk_damage": true,
+                "crown_damage": true,
+                "fruiting_bodies": false,
+                "diseases": ["canker"],
+                "dry_branches_percent": 60.0,
+                "other": "Сильно повреждённая крона.",
+                "description": "Лиственное дерево с гнилью ствола, трещинами и усохшей кроной.",
+                "tree_bounding_boxes": [[250, 120, 420, 650]]
             }
-        ])
+        ]"""
 
-        self.LOG.info("ПОЛУЧЕНО СЫРОЕ ОПИСАНИЕ...")
-        print(response.message.content)
-        if response.message.content != None:
-            self.LOG.info("КОНВЕРТАЦИЯ В JSON...")
-            return json.loads(response.message.content.replace("```json", "").replace("```", ""))
+        time.sleep(2)
+
+        if data != None:
+            return json.loads(data.replace("```json", "").replace("```", ""))
 
         return None
 
-
-    # тут начинается часть лучшего программиста нашей группы
-    # восходящей звезды, а точнее супер-звезды
-    # и я покажу как сделать классификатор дерево или нет 
-    # в домашних условиях своими руками
-
+    @LOG("ОПРЕДЕЛЕНИЕ ДЕРЕВА НА ФОТО")
     def tont(self, img: Img): # Tree Or Not Tree
         image = self.preprocess(img).unsqueeze(0)
         text = self.tokenizer(prms.TOKENS)
@@ -135,7 +173,6 @@ class Neuro:
                 # print(f"{label}: {score:.4f}")
                 # print("Prediction:", prms.LABELS[similarity[0].argmax().item()])
                 # prediction *= prms.LABELS[similarity[0].argmax().item()]
-            # print("Prediction:", prediction)
+            print("Prediction:", prediction)
 
-        # return prediction
         return prediction
