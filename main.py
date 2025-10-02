@@ -1,44 +1,32 @@
-import logging
 import os
-import asyncio
-from typing import Any
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 from fastapi.responses import FileResponse
-from models import*
-from neuro import*
+from PIL import Image
+
+from . import APP, prms
+from .neuro import Neuro, to_base64, from_base64
+from .models import*
 
 
-app = FastAPI()
-LOG = logging.getLogger("uvicorn.info")
-LOG.info("ЗАПУСК МОДУЛЯ NEURO...")
-neuro = Neuro(LOG)
-LOG.info("МОДУЛЬ NEURO ЗАПУЩЕН")
+@APP.post("/analyze", response_model=OutputData)
+async def analyze_trees(data: InputData):
+    neuro: Neuro = APP.state.neuro
 
-
-@app.post("/analyze", response_model=OutputData)
-# async def analyze_trees(data: InputData):
-async def analyze_trees():
-    # ОБРАЩЕНИЕ К YOLO и LLM
     trees: list[TreeInfo] = []
 
-    # img = from_base64(data.img_base64)
-    img = "image.png"
-    img_user, img_ollama = neuro.depth_marked(Image.open(img))
-    LOG.info("МАРКИРОВКА ЗАВЕРШЕНА УСПЕШНО")
-
-    if not neuro.tont(img_user):
+    img = from_base64(data.img_base64)
+    if not neuro.tont(Image.open(img)): 
         raise HTTPException(
             status_code=500,
-            detail="Its_Not_Tree error"
+            detail="Tree error"
         )
-    else: print("derevo")
+    img_user, img_ollama = neuro.depth_marked(img)
 
-    # json_description = [] # neuro.ollama_json(to_base64(img_ollama))
-    # LOG.info("ОПИСАНИЕ ПОЛУЧЕНО УСПЕШНО")
-    # if json_description:
-    #     for tree in json_description:
-    #         trees.append(TreeInfo(**tree)) # type: ignore
-    return OutputData(img_marked_base64=to_base64(img_user), trees=trees)
+    json_description = neuro.ollama_json(to_base64(img_ollama))
+    if json_description:
+        for tree in json_description:
+            trees.append(TreeInfo(**tree)) # type: ignore
+        return OutputData(img_marked_base64=to_base64(img_user), trees=trees)
 
     raise HTTPException(
         status_code=500,
@@ -46,7 +34,7 @@ async def analyze_trees():
     )
 
 
-@app.get("/tutorial/{step}")
+@APP.get("/tutorial/{step}")
 def get_tutorial_image(step: int):
     file_path = os.path.join(prms.TUTORIAL_DIR, f"tutorial{step}.png")
 
@@ -54,6 +42,3 @@ def get_tutorial_image(step: int):
         raise HTTPException(status_code=404, detail="Image not found")
 
     return FileResponse(file_path, media_type="image/png")
-
-if __name__ == "__main__":
-    asyncio.run(analyze_trees())
