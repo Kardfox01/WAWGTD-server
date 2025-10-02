@@ -12,8 +12,8 @@ import requests
 import torch
 import open_clip
 
-import prms
-from logger import LOG
+from . import prms
+from .logger import LOG
 
 
 Img = Image.Image
@@ -31,8 +31,8 @@ def to_base64(img: Img):
 class Neuro:
     def __init__(self):
         self.load_dpt()
-        # self.ollama_warmup()
         self.load_clip()
+        self.ollama_warmup()
 
     @LOG("ПРОГРЕВ OLLAMA")
     def ollama_warmup(self):
