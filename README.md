@@ -75,4 +75,4 @@ fastapi dev
 ## 🧑‍💻 Команда
 
 Проект разработан на Международный хакатон 2025.  
-Авторы: @kardfox01, @ysmrrb, @sivalod
+Авторы: [@kardfox01](https://t.me/kardfox01), [@ysmrrb](https://t.me/ysmrrb), [@sivalod](https://t.me/sivalod)
