@@ -10,6 +10,7 @@ import numpy as np
 from ollama import chat, ChatResponse
 import requests
 import torch
+import open_clip
 
 from . import prms
 from .logger import LOG
@@ -30,6 +31,7 @@ def to_base64(img: Img):
 class Neuro:
     def __init__(self):
         self.load_dpt()
+        self.load_clip()
         self.ollama_warmup()
 
     @LOG("ПРОГРЕВ OLLAMA")
@@ -56,6 +58,13 @@ class Neuro:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.midas.to(self.device)
         self.transforms = torch.hub.load("intel-isl/MiDaS", "transforms", verbose=False)
+
+    @LOG("ЗАГРУЗКА CLIP")
+    def load_clip(self):
+        self.clip, self._, self.preprocess = open_clip.create_model_and_transforms(
+            "ViT-B-32", pretrained="laion2b_s34b_b79k"
+            )
+        self.tokenizer = open_clip.get_tokenizer("ViT-B-32")
 
     @LOG("МАРКИРОВКА ИЗОБРАЖЕНИЯ ПО ГЛУБИНЕ")
     def depth_marked(self, pil_img: Img) -> tuple[Img, Img]:
@@ -144,3 +153,26 @@ class Neuro:
             return json.loads(data.replace("```json", "").replace("```", ""))
 
         return None
+
+    @LOG("ОПРЕДЕЛЕНИЕ ДЕРЕВА НА ФОТО")
+    def tont(self, img: Img): # Tree Or Not Tree
+        image = self.preprocess(img).unsqueeze(0)
+        text = self.tokenizer(prms.TOKENS)
+
+        with torch.no_grad():
+            image_features = self.clip.encode_image(image)
+            text_features = self.clip.encode_text(text)
+
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+
+            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+
+            prediction = prms.LABELS[similarity[0].argmax().item()]
+            # for label, score in zip(prms.LABELS, similarity[0].tolist()):
+                # print(f"{label}: {score:.4f}")
+                # print("Prediction:", prms.LABELS[similarity[0].argmax().item()])
+                # prediction *= prms.LABELS[similarity[0].argmax().item()]
+            # print("Prediction:", prediction)
+
+        return prediction

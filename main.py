@@ -1,6 +1,7 @@
 import os
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
+from PIL import Image
 
 from . import APP, prms
 from .neuro import Neuro, to_base64, from_base64
@@ -14,6 +15,11 @@ async def analyze_trees(data: InputData):
     trees: list[TreeInfo] = []
 
     img = from_base64(data.img_base64)
+    if not neuro.tont(Image.open(img)): 
+        raise HTTPException(
+            status_code=500,
+            detail="Tree error"
+        )
     img_user, img_ollama = neuro.depth_marked(img)
 
     json_description = neuro.ollama_json(to_base64(img_ollama))
